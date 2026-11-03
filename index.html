@@ -1164,6 +1164,7 @@ async function nextTurn() {
   }
 }
 async function roundStart() {
+  C.units.forEach(z => { delete z.st.aimed; });
   const boss = C.units.some(z => z.side === 'enemy' && alive(z) && z.tier === 'chefe');
   if (C.round > (boss ? 40 : 20)) { C.units.filter(z => z.side === 'enemy' && alive(z)).forEach(z => { z.fled = true; }); log('O tiroteio se arrasta. Os inimigos que restam recuam e somem nas vielas.', 'sys'); return; }
   for (const u of C.units.filter(z => alive(z) && z.E && z.E.ai && z.E.ai.startsWith('boss'))) await bossRound(u);
@@ -1495,7 +1496,7 @@ async function aiTurn(u) {
     else if (ai === 'idle') { }
     else await aiRanged(u, ai === 'turret');
     if (ai === 'boss_prata' && !u.uses.granada && C.round >= 2 && alive(u)) {
-      const foes = enemiesOf(u); let best = null, bc = 0;
+      const foes = targetsFor(u); let best = null, bc = 0;
       foes.forEach(f => { const c = foes.filter(g => Math.abs(g.x - f.x) <= 2 && Math.abs(g.y - f.y) <= 2).length; if (c > bc && dist(u, f) <= 12) { bc = c; best = f; } });
       if (best && bc >= 2) { u.uses.granada = 1; log('General Prata arremessa uma granada.', 'bad'); UIH.fx('boom', { x: best.x, y: best.y }); await UIH.wait(250); explode(best.x, best.y, 'grenade', u); }
     }
@@ -1503,19 +1504,27 @@ async function aiTurn(u) {
   C.busy = false; UIH.update();
   if (!C.over) await UIH.wait(200 / C.speed);
 }
+// alvos válidos para a IA: quem está caído só vira alvo se não houver mais ninguém de pé (e nunca no modo narrativo)
+function targetsFor(u) {
+  const all = enemiesOf(u).filter(f => !f.tags.includes('node') || u.side === 'party');
+  const standing = all.filter(t => !(t.hero && t.hp < 1));
+  if (standing.length) return standing;
+  return C.opts.narrative ? [] : all;
+}
+function spread(t) { return 1 - Math.min(0.45, (t.st.aimed || 0) * 0.15); }
 function bestShot(u, from, foes) {
   const wi = rangedWeapon(u); if (wi === null) return null; const save = { x: u.x, y: u.y, wi: u.wi };
   u.x = from.x; u.y = from.y; u.wi = wi; let best = null;
   for (const t of foes) {
     const info = attackInfo(u, t, 'shot'); if (!info.ok) continue;
-    const w = weaponOf(u); const exp = info.chance * Math.max(1, w.dice * 3.5 - t.sp[0] * 0.8) * w.rof + threat(u, t) * 0.05;
+    const w = weaponOf(u); const exp = (info.chance * Math.max(1, w.dice * 3.5 - t.sp[0] * 0.8) * w.rof + threat(u, t) * 0.05) * (u.side === 'enemy' ? spread(t) * (0.85 + rnd() * 0.3) : 1);
     if (!best || exp > best.exp) best = { t, exp, info };
   }
   u.x = save.x; u.y = save.y; u.wi = save.wi; return best;
 }
 function coverScore(x, y, foes) { let s = 0; for (const [dx, dy] of DIRS) { if (ob(x + dx, y + dy) && ob(x + dx, y + dy).mat !== 'fora') s += 0.4; } const near = foes.filter(f => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) <= 1).length; return s - near * 1.5; }
 async function aiRanged(u, fixed) {
-  const foes = enemiesOf(u).filter(f => !f.tags.includes('node') || u.side === 'party'); if (!foes.length) return;
+  const foes = targetsFor(u); if (!foes.length) return;
   const wi = rangedWeapon(u); if (wi === null) return aiMelee(u); u.wi = wi; const w = weaponOf(u);
   if (w.slot.ammo < 1) { doReload(u); await UIH.wait(200 / C.speed); }
   if (!fixed && u.moveLeft > 0) {
@@ -1525,7 +1534,7 @@ async function aiRanged(u, fixed) {
     else { await advance(u, foes); }
   }
   for (let k = 0; k < 3 && alive(u) && !C.over; k++) {
-    const s = bestShot(u, u, enemiesOf(u).filter(f => !f.tags.includes('node') || u.side === 'party' || true)); if (!s) break;
+    const s = bestShot(u, u, targetsFor(u)); if (!s) break; s.t.st.aimed = (s.t.st.aimed || 0) + 1;
     const ww = weaponOf(u);
     if (k === 0 && ww.autofire && ww.slot.ammo >= 10 && u.action) { const af = attackInfo(u, s.t, 'autofire'); if (af.ok && af.chance > 0.45 && uSkill(u, 'autofire') >= 8) { await doAttack(u, s.t, 'autofire'); break; } }
     if (!canAttackNow(u, 'shot', ww) || ww.slot.ammo < 1) break;
@@ -1543,10 +1552,10 @@ async function advance(u, foes) {
   if (stop && (stop.x !== u.x || stop.y !== u.y)) await moveTo(u, stop.x, stop.y);
 }
 async function aiMelee(u) {
-  const foes = enemiesOf(u).filter(f => !f.tags.includes('node')); if (!foes.length) return;
+  const foes = targetsFor(u).filter(f => !f.tags.includes('node')); if (!foes.length) return;
   const mi = meleeWeapon(u); const mode = mi === null ? 'brawl' : 'melee'; if (mi !== null) u.wi = mi;
   let target = null, spot = null;
-  const sorted = foes.slice().sort((a, b) => (dist(u, a) - threat(u, a) * 0.1) - (dist(u, b) - threat(u, b) * 0.1));
+  const sorted = foes.slice().sort((a, b) => (dist(u, a) - threat(u, a) * 0.1 + (a.st.aimed || 0)) - (dist(u, b) - threat(u, b) * 0.1 + (b.st.aimed || 0)));
   for (const f of sorted) { const s = reachAdjacent(u, f, u.moveLeft); if (s) { target = f; spot = s; break; } }
   if (!target) {
     await advance(u, foes);
@@ -1554,6 +1563,7 @@ async function aiMelee(u) {
     for (const f of sorted) if (dist(u, f) === 1) { target = f; break; }
     if (!target) return;
   } else if (spot.x !== u.x || spot.y !== u.y) await moveTo(u, spot.x, spot.y);
+  target.st.aimed = (target.st.aimed || 0) + 1;
   for (let k = 0; k < 2 && alive(target) && alive(u) && !C.over; k++) {
     if (!canAttackNow(u, mode, mode === 'brawl' ? null : weaponOf(u))) break;
     await doAttack(u, target, mode === 'brawl' ? 'brawl' : 'melee'); await UIH.wait(120 / C.speed);
@@ -1561,7 +1571,7 @@ async function aiMelee(u) {
   }
 }
 async function aiNetrunner(u) {
-  const foes = enemiesOf(u); const t = foes.filter(f => dist(u, f) <= 10).sort((a, b) => a.hp - b.hp)[0];
+  const foes = targetsFor(u); const t = foes.filter(f => dist(u, f) <= 10).sort((a, b) => a.hp * spread(a) - b.hp * spread(b))[0];
   if (t && u.action) {
     u.action = false; const r = d10x(); const base = uSkill(u, 'interface'); const tot = base + r.v; const dv = 12 + (t.hero ? Math.floor(skillVal(t.hero, 'concentration') / 4) : 0);
     log(`${u.short} · ataque de rede em ${t.short}: ${base} + d10(${r.txt}) = ${tot} contra DV ${dv}: ${tot > dv ? 'sucesso' : 'falha'}.`, tot > dv ? 'roll' : 'miss');
@@ -1572,9 +1582,9 @@ async function aiNetrunner(u) {
   await aiRanged(u);
 }
 async function aiCabra(u) {
-  const foes = enemiesOf(u); if (!foes.length) return;
+  const foes = targetsFor(u); if (!foes.length) return;
   for (let k = 0; k < 1 && !C.over; k++) {
-    const t = pick(enemiesOf(u)); if (!t) break;
+    const t = pick(targetsFor(u)); if (!t) break;
     const atk = uSkill(u, 'shoulder'); const dv = 15 + (canDodge(t) ? 2 : 0); const r = d10x(); const tot = atk + r.v; const hit = tot > dv;
     log(`Neo SantaCataReich dispara pela rede de torretas em ${t.short}: ${atk} + d10(${r.txt}) = ${tot} contra DV ${dv}: ${hit ? 'acerto' : 'erro'}.`, hit ? 'roll' : 'miss');
     UIH.fx('net', { u, t }); await UIH.wait(220 / C.speed);
