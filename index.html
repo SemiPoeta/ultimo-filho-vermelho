@@ -220,6 +220,9 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-radius:3px;padding
 
 .portrait.wide img{max-height:240px;object-position:50% 40%}.portrait{margin:10px 0 14px;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#0b1013}.portrait img{display:block;width:100%;max-height:300px;object-fit:cover;object-position:50% 20%}.portrait figcaption{font:600 11px var(--head);letter-spacing:.14em;text-transform:uppercase;color:var(--sun);padding:6px 10px}
 
+.float.big{font-size:15px;letter-spacing:.08em;color:#ff6b62;white-space:nowrap;animation:up 1.8s forwards}
+.range{width:100%;accent-color:var(--neon);border:0;padding:0;background:none}
+
 /* ===== TEMA HUD NEON (visual próprio, inspirado em interfaces cyberpunk) ===== */
 :root{
   --ink:#07080a;--asf:#0f0b0d;--conc:#1b1215;--line:#4a1a1c;
@@ -1157,7 +1160,7 @@ async function nextTurn() {
     if (!go) continue;
     UIH.update();
     if (u.side === 'enemy' || C.auto || !u.hero) { await aiTurn(u); if (C.over) return; guard = 0; continue; }
-    return; // espera o jogador
+    UIH.fx('turn', u); return; // espera o jogador
   }
 }
 async function roundStart() {
@@ -1175,6 +1178,7 @@ async function beginTurn(u) {
     const tot = r + u.deathPen - bio; const ok = r !== 10 && tot < body; u.deathPen += 1;
     log(`Teste de morte de ${u.short}: d10(${r}) + penalidade ${u.deathPen - 1}${bio ? ' − biomonitor ' + bio : ''} = ${tot} contra BODY ${body}: ${ok ? 'resiste' : 'morre'}.`, ok ? 'roll' : 'bad');
     if (!ok) { kill(u); return false; }
+    UIH.fx('save', u);
   }
   if (u.st.stun) { u.st.stun -= 1; log(`${u.short} está em pane e perde o turno.`, 'sys'); await UIH.wait(300); return false; }
   if (u.st.shaken) { delete u.st.shaken; log(`${u.short} está abalado e perde a ação.`, 'sys'); u.action = false; }
@@ -1195,14 +1199,14 @@ function kill(u) {
   if (u.hero) { u.hp = 0; log(`✝ ${u.name} morreu.`, 'bad'); }
   else if (u.side === 'enemy') { if (u.eid === 'noRefrigeracao') { const core = C.units.find(z => z.eid === 'cabra' && alive(z)); if (core && !core.st.exposto && !C.units.some(z => z.eid === 'noRefrigeracao' && alive(z) && z !== u)) { core.st.exposto = 1; core.sp = [8, 8]; log('Sem refrigeração, o núcleo superaquece: a blindagem do avatar Cabra cai para SP 8.', 'good'); } } C.killed += 1; C.loot += u.E.eb || 0; log(`${u.name} cai.`, 'good'); }
   else log(`${u.name} é destruído.`, 'bad');
-  UIH.fx('death', u);
+  UIH.fx(u.hero ? 'death' : 'kill', u);
 }
 
 // ---------- Movimento ----------
 async function moveTo(u, x, y) {
   const r = reach(u, u.moveLeft); const k = x + ',' + y; if (!r.has(k)) return false;
   const path = []; let c = r.get(k); while (c) { path.unshift(c); c = c.prev ? r.get(c.prev) : null; }
-  for (let i = 1; i < path.length; i++) { u.x = path[i].x; u.y = path[i].y; UIH.update(); await UIH.wait(70); }
+  for (let i = 1; i < path.length; i++) { u.x = path[i].x; u.y = path[i].y; UIH.update(); UIH.fx('step', u); await UIH.wait(70); }
   u.moveLeft -= r.get(k).c;
   return true;
 }
@@ -1271,7 +1275,7 @@ function addCrit(t) { const free = CRITS.filter(c => !t.crits.includes(c.id)); c
 function damage(t, n) {
   if (n <= 0) { UIH.fx('block', t); return; }
   t.hp -= n; UIH.fx('hit', { t, n });
-  if (t.hero) { if (t.hp < 1) { if (t.hp + n >= 1) log(`${t.short} cai mortalmente ferido!`, 'bad'); t.hp = Math.max(t.hp, 0); } }
+  if (t.hero) { if (t.hp < 1) { if (t.hp + n >= 1) { log(`${t.short} cai mortalmente ferido!${C.opts.narrative ? ' Fica inconsciente.' : ' Vai testar morte a cada turno.'}`, 'bad'); UIH.fx('mortal', t); } t.hp = Math.max(t.hp, 0); } }
   else if (t.hp <= 0) kill(t);
   if (t.eid === 'aurea' || t.eid === 'generalPrata' || t.eid === 'maeMatilha') bossHurt(t);
 }
@@ -1296,7 +1300,7 @@ async function doAttack(u, t, mode, wi) {
   const info = attackInfo(u, t, mode); if (!info.ok) { log(info.why, 'sys'); return false; }
   spend(u, mode, w); u.lastW = mode === 'brawl' ? -1 : u.wi;
   const label = mode === 'brawl' ? 'Briga' : mode === 'aimed' ? w.name + ' (na cabeça)' : mode === 'autofire' ? 'rajada de ' + w.name : w.name;
-  UIH.fx('shot', { u, t, melee: info.melee });
+  UIH.fx('shot', { u, t, melee: info.melee, type: !w ? 'brawl' : w.kind === 'melee' ? 'melee' : w.type, mode });
   await UIH.wait(160);
   const r = rollAttack(u, t, info, label);
   if (r.hit) {
@@ -1315,7 +1319,7 @@ async function doShell(u, t) {
   const w = weaponOf(u); if (w.slot.ammo < 1) return false; spend(u, 'shell', w);
   const r = d10x(); const atk = uSkill(u, 'shoulder') + pen(u, 'ranged'); const tot = atk + r.v;
   const hit = tot > 13; log(`${u.short} · chumbo: ${atk} + d10(${r.txt}) = ${tot} contra DV 13: ${hit ? 'acerto' : 'erro'}.`, hit ? 'roll' : 'miss');
-  UIH.fx('shot', { u, t }); await UIH.wait(160);
+  UIH.fx('shot', { u, t, type: 'shotgun' }); await UIH.wait(160);
   if (hit) {
     const vx = t.x - u.x, vy = t.y - u.y; const len = Math.hypot(vx, vy) || 1; const dice = d6s(3);
     C.units.filter(z => alive(z) && z !== u && dist(u, z) <= 3 && los(u, z)).forEach(z => {
@@ -1328,12 +1332,12 @@ async function doShell(u, t) {
 async function attackObstacle(u, x, y) {
   const w = weaponOf(u); const o = ob(x, y); if (!o || !w || w.kind !== 'ranged' || w.slot.ammo < 1 || !canAttackNow(u, 'shot', w)) return false;
   const d = Math.max(Math.abs(u.x - x), Math.abs(u.y - y)); const b = bandIndex(d); if (b < 0) return false;
-  spend(u, 'shot', w); u.lastW = u.wi;
+  spend(u, 'shot', w); u.lastW = u.wi; UIH.fx('shot', { u, t: { x, y }, type: w.type });
   const dmg = sum(d6s(w.dice)); o.hp -= dmg; log(`${u.short} atira em ${MATERIALS[o.mat].name}: ${dmg} de dano (${Math.max(0, o.hp)}/${o.hpMax}).`, 'roll');
   if (o.hp <= 0) { C.tiles[y][x].ob = null; log(`${MATERIALS[o.mat].name} desmorona.`, 'good'); }
   UIH.update(); return true;
 }
-function doReload(u) { const w = weaponOf(u); if (!u.action || !w || w.kind !== 'ranged' || w.slot.ammo >= w.mag) return false; u.action = false; u.shots = 0; w.slot.ammo = w.mag; log(`${u.short} recarrega ${w.name}.`, 'sys'); return true; }
+function doReload(u) { const w = weaponOf(u); if (!u.action || !w || w.kind !== 'ranged' || w.slot.ammo >= w.mag) return false; u.action = false; u.shots = 0; w.slot.ammo = w.mag; log(`${u.short} recarrega ${w.name}.`, 'sys'); UIH.fx('reload', u); return true; }
 
 // ---------- Itens ----------
 async function useItem(u, itemId, target, tx, ty) {
@@ -1709,8 +1713,8 @@ function panelHTML(p) {
     <label class="lbl">Nome da jornada</label><input id="jname" value="Jornada ${Object.keys(loadAll().journeys).length + 1}" maxlength="40">
     <label class="lbl">O grupo (escolha 4)</label>${partyPicker(4)}
     <label class="lbl">Regras de morte</label>
-    <label class="check"><input type="radio" name="jmode" value="red" ${UI.mode !== 'narrativo' ? 'checked' : ''} data-a="setMode"> <span><b>Cyberpunk RED</b> <small class="muted">· mortalmente ferido testa morte a cada turno; quem falha morre de vez</small></span></label>
-    <label class="check"><input type="radio" name="jmode" value="narrativo" ${UI.mode === 'narrativo' ? 'checked' : ''} data-a="setMode"> <span><b>Narrativo</b> <small class="muted">· quem cai fica inconsciente até o fim da luta; o grupo só perde se todos caírem</small></span></label>
+    <label class="check"><input type="radio" name="jmode" value="red" ${UI.mode !== 'narrativo' ? 'checked' : ''} data-a="setMode"> <span><b>Cyberpunk RED</b> <small class="muted">· mortalmente ferido testa morte a cada turno; quem falha morre de vez. No fim da luta, quem estiver caído precisa ser estabilizado (DV 15)</small></span></label>
+    <label class="check"><input type="radio" name="jmode" value="narrativo" ${UI.mode === 'narrativo' ? 'checked' : ''} data-a="setMode"> <span><b>Narrativo</b> <small class="muted">· quem cai fica inconsciente até o fim da luta, sem teste de morte. Depois precisa ser estabilizado (DV 13); se falhar, ainda pode morrer</small></span></label>
     <label class="lbl">Semente</label><div class="row"><input id="jseed" value="${UI.newSeed || randomSeed()}" maxlength="16"><button class="btn ghost sm" data-a="reseed">Sortear</button></div>
     <p class="small muted">A mesma semente refaz os mesmos mapas e as mesmas batalhas.</p>
     <div class="foot"><button class="btn primary ${UI.partyPick.length ? '' : 'off'}" data-a="startJourney">Começar a jornada</button></div>`;
@@ -1728,6 +1732,8 @@ function panelHTML(p) {
       ${['capanga', 'elite', 'chefe'].map(t => `<div class="egroup"><h4>${t === 'capanga' ? 'Capangas' : t === 'elite' ? 'Elites' : 'Chefes'}</h4>${groups[t].map(([k, e]) => `<div class="counter"><span class="eg">${e.glyph}</span><span>${esc(e.name)}</span><button class="btn ghost xs" data-a="cnt" data-k="${k}" data-d="-1">−</button><b>${UI.avulsa[k] || 0}</b><button class="btn ghost xs" data-a="cnt" data-k="${k}" data-d="1">+</button></div>`).join('')}</div>`).join('')}
       <div class="foot"><button class="btn primary ${total && UI.partyPick.length ? '' : 'off'}" data-a="startAvulsa">Lutar</button></div>`; }
   if (p === 'pOpcoes') return `${panelHead('Opções')}
+    <label class="check"><input type="checkbox" data-a="optSound" ${OPTS.sound !== false ? 'checked' : ''}> Sons</label>
+    <label class="lbl">Volume</label><input type="range" min="0" max="1" step="0.05" value="${OPTS.vol === undefined ? 0.6 : OPTS.vol}" id="optVol" class="range">
     <label class="check"><input type="checkbox" data-a="optDice" ${OPTS.dice ? 'checked' : ''}> Mostrar números flutuando no tabuleiro</label>
     <label class="check"><input type="checkbox" data-a="optReduce" ${OPTS.reduce ? 'checked' : ''}> Movimento reduzido (animações mais curtas)</label>
     <label class="lbl">Velocidade padrão dos inimigos</label><div class="row">${[1, 2, 4].map(s => `<button class="btn ${OPTS.speed === s ? 'primary' : 'ghost'} sm" data-a="optSpeed" data-s="${s}">${s}×</button>`).join('')}</div>
@@ -1761,6 +1767,9 @@ ACT.reseed = () => { $('#jseed').value = randomSeed(); };
 ACT.setMode = (d, el) => { UI.mode = el.value; };
 ACT.cnt = d => { UI.avulsa[d.k] = Math.max(0, Math.min(6, (UI.avulsa[d.k] || 0) + Number(d.d))); showMenu(); };
 ACT.optDice = (d, el) => { OPTS.dice = el.checked; saveOpts(); };
+ACT.optSound = (d, el) => { OPTS.sound = el.checked; saveOpts(); SFX.init(); SFX.setVol(); SFX.click(); };
+document.addEventListener('input', e => { if (e.target.id === 'optVol') { OPTS.vol = Number(e.target.value); saveOpts(); SFX.init(); SFX.setVol(); } });
+document.addEventListener('change', e => { if (e.target.id === 'optVol') SFX.click(); });
 ACT.optReduce = (d, el) => { OPTS.reduce = el.checked; saveOpts(); };
 ACT.optSpeed = d => { OPTS.speed = Number(d.s); saveOpts(); showMenu(); };
 ACT.wipe = () => { openModal(`<h3>Apagar todas as jornadas?</h3><p>Não dá para desfazer.</p><div class="foot"><button class="btn ghost" data-a="closeM">Cancelar</button><button class="btn danger" data-a="wipeYes">Apagar</button></div>`); };
@@ -1884,13 +1893,31 @@ ACT.fight = () => {
   const bonus = J.act === 2 && P.n.type === 'chefe' && J.flags.revertido ? 1 : 0;
   beginCombat({ heroes: J.party, enemies: P.enc.enemies, seed: J.seed + ':c:' + J.act + ':' + P.n.id + (P.forced ? ':ev' : ''), act: J.act, kind: P.forced ? 'evento' : P.n.type, title: P.enc.name, journey: J, narrative: J.mode === 'narrativo', ambush: P.ambush, bonus, chico: J.act === 4 && P.n.type === 'chefe' && J.flags.chico }, res => afterCombat(res, P));
 };
+function stabilizeAfter() {
+  // quem termina a luta mortalmente ferido precisa ser estabilizado
+  const lines = []; const red = J.mode !== 'narrativo'; const dv = red ? 15 : 13;
+  const downs = C.units.filter(u => u.hero && alive(u) && u.hp < 1);
+  downs.forEach(u => {
+    const medics = C.units.filter(v => v.hero && alive(v) && v.hp >= 1);
+    const best = medics.map(v => ({ v, b: Math.max(skillVal(v.hero, 'firstAid'), v.hero.role === 'medtech' ? skillVal(v.hero, 'medicine') : 0) })).sort((a, b) => b.b - a.b)[0];
+    let ok = false;
+    if (best) { const ki = J.stash.items.indexOf('kitTrauma'); const kit = ki >= 0 ? 2 : 0; if (kit) J.stash.items.splice(ki, 1); const r = d10x(); const tot = best.b + kit + r.v; ok = tot > dv;
+      lines.push(`${u.short} está mortalmente ferido. ${best.v.short} tenta estabilizar: ${best.b}${kit ? ' + kit 2' : ''} + d10(${r.txt}) = ${tot} contra DV ${dv}: ${ok ? 'consegue' : 'não consegue'}.`); }
+    else lines.push(`${u.short} está mortalmente ferido e não há ninguém de pé para estabilizar.`);
+    if (!ok) { const r = ri(1, 10); const pen = red ? u.deathPen : 0; const tot = r + pen; const live = r !== 10 && tot < uStat(u, 'BODY');
+      lines.push(`Teste de morte de ${u.short}: d10(${r})${pen ? ' + ' + pen : ''} = ${tot} contra BODY ${uStat(u, 'BODY')}: ${live ? 'resiste, por pouco' : 'não resiste'}.`);
+      if (!live) { u.dead = true; u.hp = 0; } }
+  });
+  return lines;
+}
 function afterCombat(res, P) {
+  const stab = res === 'vitoria' ? stabilizeAfter() : [];
   syncHeroes();
   if (res === 'derrota') { J.ended = 'derrota'; saveJ(); return showGameOver(); }
   const R = rankOf('fixer'); const med = rankOf('medtech');
   let eb = C.loot + ri(15, 45) + R * 10; J.eb += eb; J.killed += C.killed;
   J.party.forEach(h => { if (!h.dead) h.hp = Math.min(hpMax(h), h.hp + stat(h, 'BODY') + med * 2); });
-  const lines = [`+${eb} eb${R ? ' (contatos do Fixer incluídos)' : ''}`];
+  const lines = stab.concat([`+${eb} eb${R ? ' (contatos do Fixer incluídos)' : ''}`]); SFX.coin();
   lines.push(med ? `Curativos: cada um recupera BODY + ${med * 2} PV (Medtech)` : 'Curativos: cada um recupera PV igual à própria BODY');
   seedRng(J.seed + ':loot:' + J.act + ':' + P.n.id + (P.forced ? 'e' : ''));
   if (rnd() < 0.45 || P.n.type !== 'combate') { const it = pick(['speedheal', 'speedheal', 'granada', 'stim', 'granadaPEM', 'kitTrauma']); J.stash.items.push(it); lines.push('Encontrado: ' + ITEMS[it].name); }
@@ -1998,7 +2025,7 @@ function showMarket(n) {
     <div class="foot"><button class="btn primary" data-a="leaveShop">Sair do mercado</button></div>`, 'lock wide');
   UI.shopNode = n;
 }
-ACT.buy = d => { const o = UI.shop.offers[Number(d.i)]; const p = price(o.k === 'w' ? WEAPONS[o.id].price : o.k === 'a' ? ARMORS[o.id].price : ITEMS[o.id].price); if (J.eb < p) return; J.eb -= p; if (o.k === 'w') J.stash.weapons.push(o.id); else if (o.k === 'a') J.stash.armors.push(o.id); else J.stash.items.push(o.id); if (o.k !== 'i') o.sold = true; jlog('Comprado: ' + (o.k === 'w' ? WEAPONS[o.id].name : o.k === 'a' ? ARMORS[o.id].name : ITEMS[o.id].name) + '.'); showMarket(UI.shopNode); };
+ACT.buy = d => { SFX.coin(); const o = UI.shop.offers[Number(d.i)]; const p = price(o.k === 'w' ? WEAPONS[o.id].price : o.k === 'a' ? ARMORS[o.id].price : ITEMS[o.id].price); if (J.eb < p) return; J.eb -= p; if (o.k === 'w') J.stash.weapons.push(o.id); else if (o.k === 'a') J.stash.armors.push(o.id); else J.stash.items.push(o.id); if (o.k !== 'i') o.sold = true; jlog('Comprado: ' + (o.k === 'w' ? WEAPONS[o.id].name : o.k === 'a' ? ARMORS[o.id].name : ITEMS[o.id].name) + '.'); showMarket(UI.shopNode); };
 ACT.repair = () => { const p = price(40); if (J.eb < p) return; J.eb -= p; J.party.forEach(h => { if (!h.dead) h.sp = armorMax(h); }); showMarket(UI.shopNode); };
 ACT.sell = d => { if (d.k === 'w') { const [w] = J.stash.weapons.splice(Number(d.i), 1); J.eb += Math.floor(WEAPONS[w].price / 2); } else { const [a] = J.stash.armors.splice(Number(d.i), 1); J.eb += Math.floor(ARMORS[a].price / 2); } showMarket(UI.shopNode); };
 ACT.leaveShop = () => { if (J.flags.socorro) J.flags.socorro = false; UI.shop = null; afterNode(); };
@@ -2114,6 +2141,93 @@ const PROLOGO = [
   'Como você mata algo que não tem boca, mas que faz o mundo inteiro gritar?'
 ];
 
+// ===== SONS (sintetizados com Web Audio, sem arquivos) =====
+const SFX = (() => {
+  let ctx = null, master = null, noiseBuf = null;
+  function init() {
+    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return true; }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+      ctx = new AC(); master = ctx.createGain(); master.connect(ctx.destination); setVol();
+      noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      return true;
+    } catch (e) { return false; }
+  }
+  function setVol() { if (master) master.gain.value = (OPTS.sound === false ? 0 : (OPTS.vol === undefined ? 0.6 : OPTS.vol)) * 0.5; }
+  function ok() { return ctx && OPTS.sound !== false && !OPTS.fast; }
+  function env(g, t, a, peak, d) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
+  function tone(freq, dur, type, peak, when, slideTo) {
+    if (!ok()) return; const t = ctx.currentTime + (when || 0);
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type || 'square'; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    env(g, t, 0.005, peak || 0.2, dur); o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function noise(dur, peak, when, ftype, freq, freqTo, q) {
+    if (!ok()) return; const t = ctx.currentTime + (when || 0);
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = ftype || 'lowpass';
+    f.frequency.setValueAtTime(freq || 2000, t); if (freqTo) f.frequency.exponentialRampToValueAtTime(freqTo, t + dur); f.Q.value = q || 0.8;
+    const g = ctx.createGain(); env(g, t, 0.003, peak || 0.4, dur); s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.05);
+  }
+  const shot = {
+    pistol: w => { noise(0.12, 0.55, w, 'lowpass', 3500, 400); tone(140, 0.08, 'sine', 0.35, w, 60); },
+    smg: w => { noise(0.07, 0.4, w, 'bandpass', 2500, 700, 1.2); tone(180, 0.05, 'square', 0.12, w, 90); },
+    shotgun: w => { noise(0.35, 0.8, w, 'lowpass', 2200, 150); tone(90, 0.25, 'sine', 0.5, w, 40); },
+    ar: w => { noise(0.14, 0.6, w, 'bandpass', 3200, 600, 0.9); tone(120, 0.1, 'sawtooth', 0.15, w, 50); },
+    sniper: w => { noise(0.05, 0.8, w, 'highpass', 4000); noise(0.6, 0.35, (w || 0) + 0.03, 'lowpass', 1500, 120); tone(70, 0.4, 'sine', 0.4, w, 35); },
+    melee: w => noise(0.18, 0.35, w, 'bandpass', 900, 3500, 2),
+    brawl: w => { tone(110, 0.12, 'sine', 0.5, w, 50); noise(0.06, 0.3, w, 'lowpass', 800); }
+  };
+  return {
+    init, setVol,
+    click: () => tone(1250, 0.04, 'square', 0.06),
+    hover: () => tone(1800, 0.02, 'square', 0.025),
+    select: () => { tone(880, 0.05, 'square', 0.07); tone(1320, 0.06, 'square', 0.06, 0.05); },
+    back: () => tone(600, 0.06, 'square', 0.06, 0, 380),
+    shot: (type, mode) => {
+      const f = shot[type] || shot.pistol;
+      if (mode === 'autofire') { for (let i = 0; i < 6; i++) f(i * 0.06); }
+      else f(0);
+    },
+    step: () => noise(0.04, 0.12, 0, 'bandpass', 500, 300, 2),
+    hit: () => { tone(220, 0.08, 'square', 0.12, 0, 90); noise(0.08, 0.3, 0, 'lowpass', 1200); },
+    block: () => { tone(1900, 0.12, 'triangle', 0.12, 0, 1500); tone(2600, 0.08, 'triangle', 0.06, 0.01); },
+    miss: () => noise(0.15, 0.15, 0, 'bandpass', 3000, 900, 3),
+    heal: () => { noise(0.35, 0.18, 0, 'highpass', 5000); tone(660, 0.12, 'sine', 0.12, 0.05); tone(990, 0.18, 'sine', 0.1, 0.14); },
+    net: () => { for (let i = 0; i < 5; i++) tone(300 + Math.random() * 900, 0.04, 'square', 0.08, i * 0.035); },
+    boom: () => { noise(0.9, 0.9, 0, 'lowpass', 1800, 60); tone(55, 0.7, 'sine', 0.7, 0, 30); },
+    song: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.14, 'triangle', 0.12, i * 0.09)),
+    spawn: () => tone(200, 0.25, 'sawtooth', 0.12, 0, 700),
+    reload: () => { noise(0.05, 0.3, 0, 'bandpass', 2500, 2500, 4); noise(0.05, 0.3, 0.12, 'bandpass', 1800, 1800, 4); },
+    mortal: () => { tone(440, 0.25, 'sawtooth', 0.15, 0, 220); tone(220, 0.4, 'sawtooth', 0.12, 0.2, 110); },
+    death: () => { tone(330, 0.3, 'triangle', 0.2, 0, 160); tone(160, 0.8, 'sine', 0.25, 0.25, 50); },
+    kill: () => tone(150, 0.2, 'sine', 0.25, 0, 50),
+    save: () => { tone(523, 0.08, 'square', 0.08); tone(784, 0.12, 'square', 0.08, 0.08); },
+    turn: () => { tone(740, 0.05, 'square', 0.06); tone(1110, 0.07, 'square', 0.06, 0.06); },
+    win: () => [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.18, 'square', 0.08, i * 0.11)),
+    lose: () => [392, 330, 262, 196].forEach((f, i) => tone(f, 0.3, 'sawtooth', 0.1, i * 0.22)),
+    coin: () => { tone(1500, 0.05, 'square', 0.07); tone(2000, 0.1, 'square', 0.07, 0.05); },
+    node: () => { tone(500, 0.06, 'square', 0.07, 0, 900); }
+  };
+})();
+// som em cliques de interface
+document.addEventListener('click', e => {
+  SFX.init();
+  const el = e.target.closest('.mitem,.btn,.opt,.chip,.lootc,.pcard,.endbtn,.node.avail,.card,[data-a="enter"]');
+  if (!el || el.classList.contains('off')) return;
+  if (el.classList.contains('card')) SFX.select();
+  else if (el.matches('.node.avail')) SFX.node();
+  else if (el.dataset.a === 'closePanel' || el.dataset.a === 'closeM') SFX.back();
+  else SFX.click();
+}, true);
+document.addEventListener('keydown', () => SFX.init(), true);
+let _lastHover = null;
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('.mitem,.card,.opt,.node.avail');
+  if (el && el !== _lastHover && !el.classList.contains('off')) { _lastHover = el; SFX.hover(); }
+  else if (!el) _lastHover = null;
+});
+
 // ===== INTERFACE DE COMBATE =====
 let COMBAT_END = null;
 function beginCombat(opts, onEnd) {
@@ -2122,7 +2236,7 @@ function beginCombat(opts, onEnd) {
     update: () => drawCombat(),
     log: (t, k) => appendLog(t, k),
     fx: (k, d) => fx(k, d),
-    end: res => setTimeout(() => { drawCombat(); COMBAT_END && COMBAT_END(res); }, OPTS.fast ? 10 : 700),
+    end: res => { if (res === 'vitoria') SFX.win(); else SFX.lose(); setTimeout(() => { drawCombat(); COMBAT_END && COMBAT_END(res); }, OPTS.fast ? 10 : 900); },
     wait: ms => OPTS.fast ? new Promise(r => setTimeout(r, 0)) : new Promise(r => setTimeout(r, OPTS.reduce ? Math.min(ms, 60) : ms))
   };
   render(`<div class="combat">
@@ -2145,7 +2259,8 @@ function drawCombat() {
   $('#ctop').innerHTML = `<b class="rnd">Rodada ${C.round}</b><span class="ctitle">${esc(C.title || '')}</span>
     <div class="order">${C.order.map(id => { const z = byId(id); if (!z) return ''; return `<span class="oc ${z.side} ${z === u ? 'now' : ''} ${alive(z) ? '' : 'gone'}" title="${esc(z.name)}"><i>${z.glyph}</i>${esc(z.short)}</span>`; }).join('')}</div>
     <div class="ctrl">${[1, 2, 4].map(s => `<button class="btn xs ${C.speed === s ? 'primary' : 'ghost'}" data-a="cspeed" data-s="${s}">${s}×</button>`).join('')}
-      <label class="check sm"><input type="checkbox" data-a="cauto" ${C.auto ? 'checked' : ''}> IA joga o grupo</label></div>`;
+      <label class="check sm"><input type="checkbox" data-a="cauto" ${C.auto ? 'checked' : ''}> IA joga o grupo</label>
+      <label class="check sm"><input type="checkbox" data-a="csound" ${OPTS.sound !== false ? 'checked' : ''}> Som</label></div>`;
   // tabuleiro
   const T = targets();
   const reachSet = (playerTurn() && !UI.sel && u.moveLeft > 0) ? reach(u, u.moveLeft) : new Map();
@@ -2272,6 +2387,7 @@ ACT.tile = d => {
   if (u.moveLeft > 0) act(() => moveTo(u, x, y));
 };
 ACT.endturn = () => { if (!playerTurn()) return; UI.sel = null; UI.inspect = null; endTurn(); };
+ACT.csound = (d, el) => { OPTS.sound = el.checked; saveOpts(); SFX.setVol(); };
 ACT.cspeed = d => { C.speed = Number(d.s); drawCombat(); };
 ACT.cauto = (d, el) => { const wasPlayer = playerTurn(); C.auto = el.checked; if (C.auto && wasPlayer) { UI.sel = null; (async () => { await aiTurn(cur()); nextTurn(); })(); } drawCombat(); };
 
@@ -2298,14 +2414,20 @@ document.addEventListener('mouseover', e => {
 // ---------- Registro e efeitos ----------
 function appendLog(t, k) { const ol = $('#clog'); if (!ol) return; const li = document.createElement('li'); li.className = k || ''; li.textContent = t; ol.appendChild(li); ol.scrollTop = ol.scrollHeight; }
 function center(z) { const el = $('#board'); const t = el.getBoundingClientRect().width / GW; return { x: (z.x + 0.5) * t, y: (z.y + 0.5) * t, t }; }
-function floatText(z, txt, cls) { if (!OPTS.dice) return; const b = $('#board'); if (!b) return; const p = center(z); const el = document.createElement('div'); el.className = 'float ' + (cls || ''); el.textContent = txt; el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; b.appendChild(el); setTimeout(() => el.remove(), 1100); }
+function floatText(z, txt, cls) { if (!OPTS.dice && cls !== 'big') return; const b = $('#board'); if (!b) return; const p = center(z); const el = document.createElement('div'); el.className = 'float ' + (cls || ''); el.textContent = txt; el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; b.appendChild(el); setTimeout(() => el.remove(), cls === 'big' ? 1800 : 1100); }
 function fx(kind, d) {
   const svg = $('#fxl'); if (!svg) return;
-  if (kind === 'hit') floatText(d.t, '−' + d.n, 'dmg');
-  else if (kind === 'block') floatText(d, 'SP', 'blk');
-  else if (kind === 'heal') floatText(d, '+', 'heal');
-  else if (kind === 'roll') { const db = $('#dicebox b'); if (db) { db.textContent = d.v; db.parentElement.className = 'dicebox ' + (d.hit ? 'hit' : 'miss'); } if (!d.hit) floatText(d.t, 'erro', 'miss'); }
-  else if (kind === 'shot' || kind === 'net') { const a = center(d.u), b = center(d.t); const l = document.createElementNS('http://www.w3.org/2000/svg', 'line'); l.setAttribute('x1', a.x); l.setAttribute('y1', a.y); l.setAttribute('x2', b.x); l.setAttribute('y2', b.y); l.setAttribute('class', kind === 'net' ? 'net' : d.melee ? 'melee' : 'shot'); svg.appendChild(l); setTimeout(() => l.remove(), 380); }
+  const S = { step: SFX.step, reload: SFX.reload, kill: SFX.kill, death: SFX.death, turn: SFX.turn, boom: SFX.boom, song: SFX.song, spawn: SFX.spawn, net: SFX.net };
+  if (S[kind]) S[kind]();
+  if (kind === 'hit') { floatText(d.t, '−' + d.n, 'dmg'); SFX.hit(); }
+  else if (kind === 'block') { floatText(d, 'SP', 'blk'); SFX.block(); }
+  else if (kind === 'heal') { floatText(d, '+', 'heal'); SFX.heal(); }
+  else if (kind === 'mortal') { floatText(d, C.opts.narrative ? 'INCONSCIENTE' : 'MORTALMENTE FERIDO', 'big'); SFX.mortal(); }
+  else if (kind === 'save') { floatText(d, 'RESISTE', 'heal'); SFX.save(); }
+  else if (kind === 'death' && d.hero) floatText(d, 'MORREU', 'big');
+  else if (kind === 'roll') { const db = $('#dicebox b'); if (db) { db.textContent = d.v; db.parentElement.className = 'dicebox ' + (d.hit ? 'hit' : 'miss'); } if (!d.hit) { floatText(d.t, 'erro', 'miss'); SFX.miss(); } }
+  else if (kind === 'shot' || kind === 'net') {
+    if (kind === 'shot') SFX.shot(d.type, d.mode); const a = center(d.u), b = center(d.t); const l = document.createElementNS('http://www.w3.org/2000/svg', 'line'); l.setAttribute('x1', a.x); l.setAttribute('y1', a.y); l.setAttribute('x2', b.x); l.setAttribute('y2', b.y); l.setAttribute('class', kind === 'net' ? 'net' : d.melee ? 'melee' : 'shot'); svg.appendChild(l); setTimeout(() => l.remove(), 380); }
   else if (kind === 'boom') { const p = center(d); const c = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); c.setAttribute('x', p.x - 2.5 * p.t); c.setAttribute('y', p.y - 2.5 * p.t); c.setAttribute('width', 5 * p.t); c.setAttribute('height', 5 * p.t); c.setAttribute('class', 'boom'); svg.appendChild(c); setTimeout(() => c.remove(), 600); }
   else if (kind === 'song' || kind === 'spawn') floatText(d, kind === 'song' ? '♫' : '!', 'heal');
 }
