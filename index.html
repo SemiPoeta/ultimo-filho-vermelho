@@ -2112,7 +2112,9 @@ function panelHTML(p) {
   if (p === 'pCreditos') return `${panelHead('Créditos e aviso')}
     <p><b>O Último Filho Vermelho</b> é conteúdo não oficial, fornecido sob a Homebrew Content Policy da R. Talsorian Games, e não é aprovado nem endossado pela RTG. Este conteúdo faz referência a materiais que são propriedade da R. Talsorian Games e de seus licenciados.</p>
     <p>Cyberpunk e Cyberpunk RED são marcas de seus respectivos donos. Nenhum texto, arte ou ficha de personagem dos livros foi reproduzido; as regras aparecem resumidas.</p>
-    <p>História, mundo e personagens de Pico do Sol: prólogo “O Último Filho Vermelho”, do autor do jogo. Personagens jogáveis, inimigos, eventos, código e visual: originais.</p>
+    <p>A história se passa anos depois da mesa de Cyberpunk RED <b>“Derrubando a Ditadura Moderna”</b>, mestrada por <b>Arthur Medeiros</b>.</p>
+    <p>Prólogo “O Último Filho Vermelho”, com a história, o mundo e os personagens de Pico do Sol, escrito por <b>Pedro Augusto</b> (@semipoeta).</p>
+    <p>Personagens jogáveis, inimigos, eventos, código e visual: originais. Nomes de armas do universo Cyberpunk 2077 usados como homenagem de fã.</p>
     <p class="small muted">Jogo gratuito. Não pode ser vendido.</p>`;
   if (p === 'pPrologo') return `${panelHead('Prólogo')}<div class="prose">${PROLOGO.map(x => x.startsWith('@') ? fig(x.slice(1)) : x.startsWith('#') ? `<h4>${esc(x.slice(1))}</h4>` : `<p>${esc(x)}</p>`).join('')}</div>`;
   return '';
