@@ -2207,7 +2207,7 @@ ACT.startJourney = () => {
   if (!UI.partyPick.length) return;
   const name = ($('#jname').value || 'Jornada').trim(); const seed = ($('#jseed').value || randomSeed()).trim();
   J = newJourney(name, seed, UI.partyPick.slice(), UI.mode || 'red'); J.stash.items.push(...J.party.flatMap(h => HERO_TEMPLATES.find(t => t.id === h.id).items));
-  UI.panel = null; saveJ(); actLoad(showActIntro);
+  UI.panel = null; saveJ(); storyCard('Pico do Sol · antes de tudo', 'Depois que o Planalto caiu', 'chico', CHICO_ANTES, () => actLoad(showActIntro));
 };
 ACT.startAvulsa = () => {
   const enemies = []; Object.entries(UI.avulsa).forEach(([k, n]) => { for (let i = 0; i < n; i++) enemies.push(k); });
@@ -2580,6 +2580,14 @@ function loadingCard(key, done) {
   el.addEventListener('click', end); setTimeout(end, dur + 150);
 }
 function actLoad(done) { loadingCard(pickLoad(), done); }
+// tela que situa a história de Chico, mostrada no começo de cada jornada nova
+const CHICO_ANTES = [
+  "Depois que o Planalto caiu, Pico do Sol respirou pela primeira vez em décadas.",
+  "Chico estava lá quando as milícias desmontaram suas barricadas. Estava lá quando as corporações recuaram para além da fronteira sul, levando seus seguranças particulares e seus acordos secretos e seus projéteis de borracha. Estava lá quando os primeiros tijolos da Universidade Livre de Mãe Luiza foram assentados — e carregou alguns deles nas próprias mãos, porque liderança sem calo nos dedos não vale nada.",
+  "A RedStar cresceu. Não como facção, mas como projeto. Hospitais. Centros de reabilitação. Bairros com esgoto, com luz, com nome. Chico se tornou representante oficial da Organização Mundial dos Trabalhadores para o nordeste — um cargo que ele exercia com a mesma cara de poucos amigos que usava quando entrava numa sala armado.",
+  "Os anos de paz chegaram. Foram longos. Foram reais.",
+  "E Chico os vigiou do alto da sua cobertura dúplex, café amargo na mão, olhando a cidade brilhar em cromo.",
+];
 function storyCard(kicker, title, figKey, paras, next) {
   UI.storyNext = next;
   openModal(`<div class="kicker">${esc(kicker)}</div><h2>${esc(title)}</h2>${figKey ? fig(figKey) : ''}<div class="prose">${paras.map(p => `<p>${esc(p)}</p>`).join('')}</div>
@@ -2660,7 +2668,7 @@ const PROLOGO = [
   '@chico',
   '#I. O que ele construiu',
   'Chico Butico da Silva não planejou viver tanto. Mas quando a tecnologia de Nano funcionou, quando ele acordou numa maca fria no subsolo de Mãe Luiza e Diana disse “Deu certo!”, o tempo deixou de ser uma preocupação e se tornou uma responsabilidade.',
-  'Depois que o Planalto caiu, Pico do Sol respirou pela primeira vez em décadas. A RedStar cresceu, não como facção, mas como projeto: hospitais, centros de reabilitação, bairros com esgoto, com luz, com nome.',
+  ...CHICO_ANTES,
   '#II. O presente de Nano',
   '@diana',
   'Wander trouxe a notícia num envelope de papel. Nano havia deixado backups: uma tecnologia para prolongar a vida sem cyberpsicose. A fórmula estava incompleta. Alguém havia chegado antes e apagado o que interessava.',
