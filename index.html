@@ -432,10 +432,6 @@ input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 1px var(--cya
 .portrait.wide.full img{max-height:none;height:auto;width:100%;object-fit:contain}
 .modal .portrait.wide.full img{max-height:46vh;object-fit:contain;background:#000}
 
-.loadcard.lv{background:#000}
-.loadcard.lv video{position:relative;width:100vw;height:100vh;object-fit:contain;background:#000}
-.lv-skip{position:absolute;right:18px;bottom:12px;color:var(--dust);font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.75}
-.portrait.vid video{display:block;width:100%;height:auto;max-height:46vh;object-fit:contain;background:#000}
 </style>
 </head>
 <body>
@@ -747,7 +743,7 @@ const ACTS = [
              elite: [['traidor', 1, 'miliciano', 2], ['traidor', 1, 'corpSul', 1, 'sentinela', 1]],
              boss: ['cabra', 1, 'noRefrigeracao', 3, 'sentinela', 1] },
     terrain: 'complexo' },
-  { id: 5, name: 'O Mercado da Miséria', region: 'Bom Fim', boss: 'leiloeiro', fig: 'bomfim',
+  { id: 5, name: 'O Mercado da Miséria', region: 'Bom Fim', boss: 'leiloeiro', fig: 'heliogene',
     tagline: 'A máquina não morreu. Ela vende gente em dashboards, e o balcão fica em Bom Fim.',
     intro: [
       'O avatar Cabra apagou, mas os painéis de Pico do Sol voltaram a acender no dia seguinte. A máquina não estava num servidor. Estava na rede inteira, e já não precisava da energia de ninguém.',
@@ -2109,7 +2105,6 @@ function panelHTML(p) {
     <label class="check"><input type="checkbox" data-a="optDice" ${OPTS.dice ? 'checked' : ''}> Mostrar números flutuando no tabuleiro</label>
     <label class="check"><input type="checkbox" data-a="optReduce" ${OPTS.reduce ? 'checked' : ''}> Movimento reduzido (animações mais curtas)</label>
     <label class="check"><input type="checkbox" data-a="optLoad" ${OPTS.noLoad ? '' : 'checked'}> Telas de carregamento com os cartazes de Pico do Sol</label>
-    <label class="check"><input type="checkbox" data-a="optVideo" ${OPTS.noVideo ? '' : 'checked'}> Vídeos de transmissão da RedStar na abertura dos atos</label>
     <label class="lbl">Velocidade padrão dos inimigos</label><div class="row">${[1, 2, 4].map(s => `<button class="btn ${OPTS.speed === s ? 'primary' : 'ghost'} sm" data-a="optSpeed" data-s="${s}">${s}×</button>`).join('')}</div>
     <label class="lbl">Dados salvos</label><button class="btn danger sm" data-a="wipe">Apagar todas as jornadas</button>`;
   if (p === 'pNotas') return `${panelHead('Notas de adaptação')}
@@ -2151,7 +2146,6 @@ document.addEventListener('input', e => { if (e.target.id === 'optVol') { OPTS.v
 document.addEventListener('change', e => { if (e.target.id === 'optVol') SFX.click(); });
 ACT.optReduce = (d, el) => { OPTS.reduce = el.checked; saveOpts(); };
 ACT.optLoad = (d, el) => { OPTS.noLoad = !el.checked; saveOpts(); };
-ACT.optVideo = (d, el) => { OPTS.noVideo = !el.checked; saveOpts(); };
 ACT.optSpeed = d => { OPTS.speed = Number(d.s); saveOpts(); showMenu(); };
 ACT.wipe = () => { openModal(`<h3>Apagar todas as jornadas?</h3><p>Não dá para desfazer.</p><div class="foot"><button class="btn ghost" data-a="closeM">Cancelar</button><button class="btn danger" data-a="wipeYes">Apagar</button></div>`); };
 ACT.wipeYes = () => { saveAll({ journeys: {}, last: null }); closeModal(); UI.panel = null; showMenu(); };
@@ -2529,37 +2523,17 @@ function loadingCard(key, done) {
   let fin = false; const end = () => { if (fin) return; fin = true; cancelAnimationFrame(raf); el.classList.add('out'); setTimeout(() => { el.remove(); done(); }, OPTS.reduce ? 0 : 220); };
   el.addEventListener('click', end); setTimeout(end, dur + 150);
 }
-// vídeos de carregamento (arquivos em media/): abrem cada ato que tiver um
-const VIDEOS = { picosolvid: 'picosol', orlavid: 'orla', bomfim: 'bomfim' };
-const VIDEO_BY_ACT = { 1: 'picosolvid', 2: 'orlavid', 5: 'bomfim' };
-function vidSrc(key) { const v = VIDEOS[key]; if (!v) return null; const tall = window.innerHeight > window.innerWidth * 1.1; return `media/${v}_${tall ? 'v' : 'h'}.mp4`; }
-function actLoad(done) {
-  const k = VIDEO_BY_ACT[(J && J.act) || 1];
-  if (!k || OPTS.fast || OPTS.noLoad || OPTS.noVideo) return loadingCard(pickLoad(), done);
-  loadingVideo(k, done);
-}
-function loadingVideo(key, done) {
-  const el = document.createElement('div'); el.className = 'loadcard lv'; el.setAttribute('role', 'status'); el.setAttribute('aria-label', 'Carregando');
-  el.innerHTML = `<video src="${vidSrc(key)}" muted autoplay playsinline preload="auto"></video><small class="lv-skip">clique para pular</small>`;
-  document.body.appendChild(el);
-  const v = el.querySelector('video');
-  let fin = false; const end = () => { if (fin) return; fin = true; el.classList.add('out'); setTimeout(() => { el.remove(); done(); }, OPTS.reduce ? 0 : 220); };
-  el.addEventListener('click', end); v.addEventListener('ended', end);
-  // se o vídeo não carregar, segue com o cartaz comum
-  v.addEventListener('error', () => { if (fin) return; fin = true; el.remove(); loadingCard(pickLoad(), done); });
-  const p = v.play(); if (p && p.catch) p.catch(() => {});
-  setTimeout(end, 30000);
-}
+function actLoad(done) { loadingCard(pickLoad(), done); }
 function storyCard(kicker, title, figKey, paras, next) {
   UI.storyNext = next;
   openModal(`<div class="kicker">${esc(kicker)}</div><h2>${esc(title)}</h2>${figKey ? fig(figKey) : ''}<div class="prose">${paras.map(p => `<p>${esc(p)}</p>`).join('')}</div>
     <div class="foot"><button class="btn primary" data-a="storyOk">Seguir</button></div>`, 'story lock');
 }
 ACT.storyOk = () => { closeModal(); const n = UI.storyNext; UI.storyNext = null; if (n) n(); };
-const FIGS = { nando: ['Fernando, o Nano. O Cybermédico.', 'Retrato de Nano'], chico: ['Chico Butico, o Último Filho Vermelho', 'Retrato de Chico Butico'], diana: ['Diana e Nano', 'Diana e Nano diante de um terminal'], maeluiza: ['Mãe Luiza, Pico do Sol', 'O farol de Mãe Luiza entre torres e néon'], novanassau: ['Nova Nassau', 'Cais colonial de Nova Nassau sob megatorres de néon'], avenida: ['Avenida Central, Pico do Sol', 'A clínica dourada da HelioGene na Avenida Central, sob chuva'], orla: ['Orla Seca', 'Palafitas e barcos encalhados da Orla Seca ao pôr do sol'], complexo: ['A Muralha e o complexo sob o Agreste', 'A muralha no sertão e a entrada do complexo subterrâneo'], muralha: ['Bom Fim e a Muralha', 'Cartaz da Muralha com o texto sobre a separação do Nordeste'], zonas: ['Zonas de Amortecimento', 'Cartaz das Zonas de Amortecimento: Orla Seca, Baixa Bonita e Nova Esperança'], regressao: ['Estética Regressiva · Série Nordeste', 'Cartaz da regressão geracional'], guarda: ['Guarda da HelioGene', 'Cartaz da guarda corporativa da HelioGene'], neo: ['Neo SantaCataReich, o núcleo', 'Cartaz do núcleo da Neo SantaCataReich, um rosto de máquina sob uma cruz de luz'], aurea: ['Áurea Lins, gerente da clínica', 'Cartaz de Áurea Lins na clínica HelioGene'], maematilha: ['A Mãe da Matilha, matriarca da Orla', 'Cartaz da matriarca da Orla Seca'], prata: ['General Prata, comandante da Muralha', 'Cartaz do General Prata diante da Muralha'], avatarcabra: ['O avatar Cabra da Neo SantaCataReich', 'Cartaz do avatar da máquina'], leiloeiro: ['O Leiloeiro do Sul, mercador de ruínas', 'Cartaz do Leiloeiro do Sul no pregão'], curador: ['O Curador da Série Nordeste, guardião do arquivo', 'Cartaz do Curador da Série Nordeste'], picosol: ['Pico do Sol', 'A cidade de Pico do Sol ao entardecer, com painéis holográficos'], novaesperanca: ['Nova Esperança, Zona de Amortecimento', 'O setor NE-17 de Nova Esperança, perto da Orla Seca'], heliogene: ['A torre da HelioGene', 'A torre da HelioGene e o painel da Neo SantaCataReich'], bomfim: ['Bom Fim, distrito central', 'Transmissão da RedStar sobre Bom Fim'], orlavid: ['Orla Seca, Zona de Amortecimento', 'Transmissão da RedStar sobre a Orla Seca'], picosolvid: ['Pico do Sol, a sombra do Catareich', 'Transmissão da RedStar sobre Pico do Sol'] };
+const FIGS = { nando: ['Fernando, o Nano. O Cybermédico.', 'Retrato de Nano'], chico: ['Chico Butico, o Último Filho Vermelho', 'Retrato de Chico Butico'], diana: ['Diana e Nano', 'Diana e Nano diante de um terminal'], maeluiza: ['Mãe Luiza, Pico do Sol', 'O farol de Mãe Luiza entre torres e néon'], novanassau: ['Nova Nassau', 'Cais colonial de Nova Nassau sob megatorres de néon'], avenida: ['Avenida Central, Pico do Sol', 'A clínica dourada da HelioGene na Avenida Central, sob chuva'], orla: ['Orla Seca', 'Palafitas e barcos encalhados da Orla Seca ao pôr do sol'], complexo: ['A Muralha e o complexo sob o Agreste', 'A muralha no sertão e a entrada do complexo subterrâneo'], muralha: ['Bom Fim e a Muralha', 'Cartaz da Muralha com o texto sobre a separação do Nordeste'], zonas: ['Zonas de Amortecimento', 'Cartaz das Zonas de Amortecimento: Orla Seca, Baixa Bonita e Nova Esperança'], regressao: ['Estética Regressiva · Série Nordeste', 'Cartaz da regressão geracional'], guarda: ['Guarda da HelioGene', 'Cartaz da guarda corporativa da HelioGene'], neo: ['Neo SantaCataReich, o núcleo', 'Cartaz do núcleo da Neo SantaCataReich, um rosto de máquina sob uma cruz de luz'], aurea: ['Áurea Lins, gerente da clínica', 'Cartaz de Áurea Lins na clínica HelioGene'], maematilha: ['A Mãe da Matilha, matriarca da Orla', 'Cartaz da matriarca da Orla Seca'], prata: ['General Prata, comandante da Muralha', 'Cartaz do General Prata diante da Muralha'], avatarcabra: ['O avatar Cabra da Neo SantaCataReich', 'Cartaz do avatar da máquina'], leiloeiro: ['O Leiloeiro do Sul, mercador de ruínas', 'Cartaz do Leiloeiro do Sul no pregão'], curador: ['O Curador da Série Nordeste, guardião do arquivo', 'Cartaz do Curador da Série Nordeste'], picosol: ['Pico do Sol', 'A cidade de Pico do Sol ao entardecer, com painéis holográficos'], novaesperanca: ['Nova Esperança, Zona de Amortecimento', 'O setor NE-17 de Nova Esperança, perto da Orla Seca'], heliogene: ['A torre da HelioGene', 'A torre da HelioGene e o painel da Neo SantaCataReich'] };
 // cartazes com texto na imagem aparecem inteiros, sem corte
 const POSTERS = ['guarda', 'regressao', 'zonas', 'muralha', 'neo', 'aurea', 'maematilha', 'prata', 'avatarcabra', 'leiloeiro', 'curador'];
-function fig(key, cap) { if (VIDEOS[key]) { const f = FIGS[key]; return `<figure class="portrait wide full vid"><video src="${vidSrc(key)}" muted autoplay loop playsinline aria-label="${esc(f[1])}"></video><figcaption>${esc(cap || f[0])}</figcaption></figure>`; }
+function fig(key, cap) {
   if (typeof IMG === 'undefined' || !IMG[key]) return ''; const f = FIGS[key]; return `<figure class="portrait ${key === 'chico' || key === 'nando' || key === 'diana' ? '' : 'wide'}${POSTERS.includes(key) ? ' full' : ''}"><img src="${IMG[key]}" alt="${esc(f[1])}"><figcaption>${esc(cap || f[0])}</figcaption></figure>`; }
 function nandoFig(cap) { return fig('nando', cap); }
 
@@ -2627,7 +2601,7 @@ const PROLOGO = [
   'A Muralha foi construída há setenta anos, quando o Nordeste declarou separação. Quando Nova Nassau, Bom Fim e Pico do Sol disseram chega e ergueram não só uma fronteira física, mas um projeto de nação.',
   'A primeira ação autônoma da máquina foi silenciosa: desativou os protocolos de autodestruição dos silos e os realocou como ameaça. Não contra o Sul, mas contra a própria população nordestina. Garantia de que ninguém a tiraria da tomada.',
   '#O Mercado da Miséria',
-  '@bomfim',
+  '@heliogene',
   'Os investidores do Sul e do Centro-Oeste chegaram discretamente. A máquina os recebeu com uma voz que soava como noticiário das seis, calma e didática, e apresentou o produto: “Vocês investem em infraestrutura de coleta. Eu forneço os dados. Tá OK?”',
   'Os dados eram pessoas. Tudo catalogado, etiquetado, disponibilizado em dashboards elegantes. Cada dose da HelioGene e da SolSin vendia batimento, padrão neural e marcador genético ao complexo central.',
   '#Os experimentos',
