@@ -448,6 +448,7 @@ input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 1px var(--cya
 @keyframes psy{50%{filter:drop-shadow(0 0 12px #ff2a2a) hue-rotate(-20deg) saturate(2)}}
 .float.big.psy{color:#ff2a2a;text-shadow:0 0 12px #ff2a2a}
 @media (prefers-reduced-motion:reduce){.unit.psycho{animation:none}.coin{transition-duration:.2s}}
+.check:has(input[type=radio]:checked){border-color:var(--red);background:rgba(255,59,59,.06)}.check:has(input[type=radio]:checked) b{color:var(--red)}
 </style>
 </head>
 <body>
@@ -2045,7 +2046,8 @@ function woundLabel(hp, max) { return hp < 1 ? 'mortalmente ferido' : hp < Math.
 function fmtDate(t) { const d = new Date(t); return d.toLocaleDateString('pt-BR') + ', ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el || el.classList.contains('off')) return;
-  const f = ACT[el.dataset.a]; if (f) { e.preventDefault(); f(el.dataset, el, e); }
+  // caixas de marcar e botões de opção precisam do clique normal para ficarem marcados
+  const f = ACT[el.dataset.a]; if (f) { if (!(el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox'))) e.preventDefault(); f(el.dataset, el, e); }
 });
 
 // ---------- Abertura ----------
