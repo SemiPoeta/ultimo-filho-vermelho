@@ -432,6 +432,7 @@ input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 1px var(--cya
 .portrait.wide.full img{max-height:none;height:auto;width:100%;object-fit:contain}
 .modal .portrait.wide.full img{max-height:46vh;object-fit:contain;background:#000}
 
+.loot.has .lootc:not(.chosen){opacity:.6}.loot.has .lootc:not(.chosen):hover{opacity:1}
 </style>
 </head>
 <body>
@@ -586,6 +587,16 @@ const HERO_TEMPLATES = [
     skills: { handgun: 6, melee: 4, evasion: 5, bribery: 6, persuasion: 6, perception: 5, streetwise: 6, concentration: 3 },
     weapons: ['pistolaPesada', 'faca'], armor: 'kevlar', items: ['speedheal'] }
 ];
+// recrutas da rede de Chico: entram quando os sete personagens prontos já foram usados
+const RECRUIT_NAMES = {
+  solo: ['Damião “Ferrolho” Tavares', 'Rita “Brasa” Cavalcanti'],
+  nomad: ['Tonho “Poeira” Araújo', 'Quitéria “Estrada” Lins'],
+  netrunner: ['Neide “Radar” Farias', 'Caio “Antena” Batista'],
+  techie: ['Biu “Gambiarra” Nogueira', 'Lena “Fusível” Freitas'],
+  medtech: ['Socorro “Pontinho” Leal', 'Edson “Gaze” Moura'],
+  rockerboy: ['Edvaldo “Repente” Sales', 'Jandira “Aboio” Bezerra'],
+  fixer: ['Severina “Balcão” Rocha', 'Zezinho “Troco” Dantas']
+};
 const DEFAULT_PARTY = ['joana', 'icaro', 'lucia', 'severino'];
 
 // ===== CARTAS DE ROLE =====
@@ -1145,8 +1156,9 @@ function d10x() {
 }
 
 // ---------- Personagens ----------
+function tplOf(id) { return HERO_TEMPLATES.find(x => x.id === id) || ((typeof J !== 'undefined' && J && J.recruits) || []).find(x => x.id === id); }
 function makeHero(tplId) {
-  const t = HERO_TEMPLATES.find(x => x.id === tplId);
+  const t = tplOf(tplId);
   const h = JSON.parse(JSON.stringify({ id: t.id, name: t.name, role: t.role, stats: t.stats, skills: t.skills, weapons: t.weapons, armor: t.armor }));
   h.cyber = []; h.crits = []; h.level = 1; h.rank = 4; h.dead = false; h.bonusHP = 0;
   h.hp = hpMax(h); h.sp = armorMax(h);
@@ -2124,6 +2136,7 @@ function panelHTML(p) {
       <li>Netrunning acontece no tabuleiro: Zap, Curto-circuito e Sobrecarga, sem arquitetura de rede.</li>
       <li>Habilidades de Role viraram cartas; o rank sobe um por nível.</li>
       <li>Inimigos comuns morrem a 0 PV. Quem estiver caído no fim da luta precisa ser estabilizado (DV 15 no modo RED, DV 13 no Narrativo); quem não for, testa a morte.</li>
+      <li>Depois de cada chefe, Chico manda gente no lugar de quem caiu. Se sobrar só um de pé depois de uma luta, ele atende um chamado de emergência, no máximo duas vezes por jornada. Quando os personagens prontos acabam, entram recrutas da rede dele.</li>
       <li>A jornada tem sete atos tirados do prólogo, e cada chefe tem uma mecânica própria que as missões podem enfraquecer.</li>
       <li>Munição volta cheia depois de cada combate. Humanidade cai com implantes e reduz EMP.</li></ul>
     <h4>Fora desta versão</h4><ul class="notes"><li>Veículos e combate em veículos.</li><li>Lifepath, criação de personagem e Roles Exec, Lawman e Media.</li><li>Arquiteturas de NET completas, programas e Black ICE.</li><li>Elevação, água, escalada e queda.</li><li>Terapia, drogas de rua e ciberpsicose dos personagens.</li></ul>`;
@@ -2308,7 +2321,7 @@ function afterCombat(res, P) {
   openModal(`<div class="kicker">${isBoss ? 'Fim do ato' : 'Vitória'}</div><h2>${esc(P.enc.name)}</h2><ul class="rewards">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
     ${loot ? `<h4>Escolha um espólio</h4><div class="loot">${loot.map((l, i) => `<button class="lootc" data-a="takeLoot" data-i="${i}"><b>${esc(l.name)}</b><small>${esc(l.desc)}</small></button>`).join('')}</div>` : ''}
     <div class="foot"><button class="btn primary ${loot ? 'off' : ''}" id="afterOk" data-a="afterOk">Continuar</button></div>`, 'lock');
-  UI.loot = loot;
+  UI.loot = loot; UI.lootSel = null;
 }
 function rankOf(role) { const h = J.party.find(x => !x.dead && x.role === role); return h ? h.rank : 0; }
 function lootChoices(n) {
@@ -2324,10 +2337,13 @@ function lootChoices(n) {
     { name: '250 eb', desc: 'Dinheiro vivo', give: () => { J.eb += 250; } }
   ].slice(0, 3 + (n.type === 'chefe' ? 1 : 0));
 }
-ACT.takeLoot = d => { UI.loot[Number(d.i)].give(); document.querySelectorAll('.lootc').forEach(b => b.classList.add('off')); document.querySelector(`.lootc[data-i="${d.i}"]`).classList.add('chosen'); $('#afterOk').classList.remove('off'); };
+// o espólio só é entregue ao continuar: até lá dá para trocar de ideia
+ACT.takeLoot = d => { UI.lootSel = Number(d.i); document.querySelectorAll('.lootc').forEach(b => { const on = Number(b.dataset.i) === UI.lootSel; b.classList.toggle('chosen', on); b.setAttribute('aria-pressed', on); }); const L = document.querySelector('.loot'); if (L) L.classList.add('has'); $('#afterOk').classList.remove('off'); };
 ACT.afterOk = () => {
+  if (UI.loot && UI.lootSel === null) return;
+  if (UI.loot) { UI.loot[UI.lootSel].give(); UI.loot = null; UI.lootSel = null; }
   closeModal(); const { isBoss, P } = UI.after;
-  if (P.onWin) { const txt = P.onWin(); saveJ(); return showResultText(txt); }
+  if (P.onWin) { const txt = P.onWin(); saveJ(); return sosCheck(() => showResultText(txt)); }
   if (isBoss) {
     levelUpFlow(() => reinforceFlow(() => {
       if (J.act >= ACTS.length) { J.ended = 'vitoria'; saveJ(); return showEnding(); }
@@ -2346,8 +2362,10 @@ ACT.afterOk = () => {
     }));
     return;
   }
-  if (!J.midLevel && P.n.f >= 4) { J.midLevel = true; return levelUpFlow(() => { saveJ(); showRun(); }); }
-  saveJ(); showRun();
+  sosCheck(() => {
+    if (!J.midLevel && P.n.f >= 4) { J.midLevel = true; return levelUpFlow(() => { saveJ(); showRun(); }); }
+    saveJ(); showRun();
+  });
 };
 function showResultText(txt, then) {
   openModal(`<p class="prose">${esc(txt)}</p><div class="foot"><button class="btn primary" data-a="resultOk">Continuar</button></div>`, 'lock');
@@ -2538,24 +2556,45 @@ function fig(key, cap) {
 function nandoFig(cap) { return fig('nando', cap); }
 
 // ---------- Reforço de Chico depois de cada chefe ----------
-function reinforceFlow(done) {
+function reinforceFlow(done, sos) {
   const dead = J.party.filter(h => h.dead && !h.replaced);
-  const used = J.party.map(h => h.id); const free = HERO_TEMPLATES.filter(t => !used.includes(t.id));
-  if (!dead.length || !free.length) return done();
-  UI.reinf = { done, left: Math.min(dead.length, free.length) };
-  openModal(`<div class="kicker">Reforço</div><h2>Chico manda gente</h2><p class="prose">“Ninguém substitui quem caiu. Mas o trabalho não espera.” Escolha ${UI.reinf.left === 1 ? 'quem entra' : 'até ' + UI.reinf.left + ' pessoas'} no lugar de ${dead.map(h => esc(first(h.name))).join(' e ')}.</p>
-    <div class="picker">${free.map(t => { const r = ROLES[t.role]; return `<button class="chip" data-a="reinfPick" data-id="${t.id}" style="--rc:${r.color}"><span class="g">${r.glyph}</span><span><b>${esc(first(t.name))}</b><small>${r.name}</small></span></button>`; }).join('')}</div>
+  const used = J.party.map(h => h.id);
+  if (!dead.length) return done();
+  const free = HERO_TEMPLATES.filter(t => !used.includes(t.id)).concat((J.recruits || []).filter(t => !used.includes(t.id)));
+  // sem gente pronta suficiente, Chico chama recrutas da rede, começando pelas funções de quem caiu
+  const roles = [...new Set(dead.map(h => h.role).concat(Object.keys(ROLES)))];
+  J.recruits = J.recruits || []; J.recruitN = J.recruitN || {};
+  for (const r of roles) {
+    if (free.length >= Math.max(3, dead.length + 1)) break;
+    if (free.some(t => t.role === r)) continue;
+    const n = J.recruitN[r] || 0; const names = RECRUIT_NAMES[r] || []; if (n >= names.length) continue;
+    const base = HERO_TEMPLATES.find(t => t.role === r); if (!base) continue;
+    const t = JSON.parse(JSON.stringify(base)); t.id = `rec_${r}_${n}`; t.name = names[n]; t.items = (base.items || []).slice(0, 1);
+    J.recruitN[r] = n + 1; J.recruits.push(t); free.push(t);
+  }
+  if (!free.length) return done();
+  UI.reinf = { done, sos, left: Math.min(dead.length, free.length) };
+  const kick = sos ? `Chamado de emergência · ${J.sos} de 2` : 'Reforço';
+  const fala = sos ? '“Aguenta aí. Tô mandando quem eu tenho, mas não conte com isso de novo.”' : '“Ninguém substitui quem caiu. Mas o trabalho não espera.”';
+  openModal(`<div class="kicker">${kick}</div><h2>Chico manda gente</h2><p class="prose">${fala} Escolha ${UI.reinf.left === 1 ? 'quem entra' : 'até ' + UI.reinf.left + ' pessoas'} no lugar de ${dead.map(h => esc(first(h.name))).join(' e ')}.</p>
+    <div class="picker">${free.map(t => { const r = ROLES[t.role]; return `<button class="chip" data-a="reinfPick" data-id="${t.id}" style="--rc:${r.color}"><span class="g">${r.glyph}</span><span><b>${esc(first(t.name))}</b><small>${r.name}${t.id.startsWith('rec_') ? ' · recruta' : ''}</small></span></button>`; }).join('')}</div>
     <div class="foot"><button class="btn ghost" data-a="reinfDone">Seguir sem reforço</button></div>`, 'lock');
 }
 ACT.reinfPick = d => {
   const dead = J.party.find(h => h.dead && !h.replaced); if (!dead) return;
   const lvl = Math.max(...J.party.filter(h => !h.dead).map(h => h.level), 1);
   const h = makeHero(d.id); for (let l = 1; l < lvl; l++) { heroLevelUp(h); const sk = levelUpOptions(h)[0]; h.skills[sk] = (h.skills[sk] || 0) + 1; }
-  dead.replaced = true; J.party.push(h); J.stash.items.push(...HERO_TEMPLATES.find(t => t.id === d.id).items);
+  dead.replaced = true; J.party.push(h); J.stash.items.push(...(tplOf(d.id).items || []));
   jlog(`${h.name} entra no grupo.`); UI.reinf.left -= 1;
   if (UI.reinf.left <= 0) return ACT.reinfDone();
-  reinforceFlow(UI.reinf.done);
+  reinforceFlow(UI.reinf.done, UI.reinf.sos);
 };
+// quando sobra só um de pé, Chico atende o chamado de emergência, no máximo duas vezes por jornada
+function sosCheck(next) {
+  const vivos = J.party.filter(h => !h.dead).length;
+  if (vivos === 1 && (J.sos || 0) < 2 && J.party.some(h => h.dead && !h.replaced)) { J.sos = (J.sos || 0) + 1; jlog(`Chamado de emergência para Chico (${J.sos} de 2).`); saveJ(); return reinforceFlow(next, true); }
+  next();
+}
 ACT.reinfDone = () => { closeModal(); UI.reinf.done(); };
 
 // ---------- Fins ----------
